@@ -30,6 +30,10 @@ export async function apiFetch<T = any>(
   endpoint: string,
   options: RequestInit = {}
 ): Promise<T> {
+  const baseUrl = (import.meta.env.VITE_API_URL || "").replace(/\/+$/, "");
+  const cleanEndpoint = endpoint.startsWith("/") ? endpoint : `/${endpoint}`;
+  const url = baseUrl ? `${baseUrl}${cleanEndpoint}` : cleanEndpoint;
+
   const authHeader = await getAuthHeader();
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
@@ -37,7 +41,7 @@ export async function apiFetch<T = any>(
     ...(options.headers as Record<string, string>),
   };
 
-  const response = await fetch(endpoint, {
+  const response = await fetch(url, {
     ...options,
     headers,
   });

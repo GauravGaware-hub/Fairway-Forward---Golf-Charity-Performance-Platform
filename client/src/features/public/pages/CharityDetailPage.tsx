@@ -2,6 +2,7 @@ import React from "react";
 import { useParams, Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { ShieldCheck, ArrowLeft, ExternalLink, ArrowRight } from "lucide-react";
+import { apiFetch } from "../../../lib/api";
 
 interface Charity {
   id: string;
@@ -18,9 +19,11 @@ export const CharityDetailPage: React.FC = () => {
   const { data, isLoading, isError } = useQuery<{ charity: Charity }>({
     queryKey: ["charity", id],
     queryFn: async () => {
-      const res = await fetch(`/api/v1/charities/${id}`);
-      if (!res.ok) throw new Error("Charity not found");
-      return res.json();
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const res: any = await apiFetch(`/api/v1/charities/${id}`);
+      const charity = res.data?.charity || res.charity || res;
+      if (!charity) throw new Error("Charity not found");
+      return { charity };
     },
     enabled: !!id,
   });
