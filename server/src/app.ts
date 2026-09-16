@@ -8,10 +8,14 @@ import apiRouter from "./routes/index.js";
 export function createApp(): Express {
   const app = express();
 
-  // CORS configuration using CLIENT_URL
+  // CORS configuration using CLIENT_URL (supports single or comma-separated origins)
+  const allowedOrigins = env.CLIENT_URL.includes(",")
+    ? env.CLIENT_URL.split(",").map((url) => url.trim())
+    : env.CLIENT_URL;
+
   app.use(
     cors({
-      origin: env.CLIENT_URL,
+      origin: allowedOrigins,
       credentials: true,
     })
   );
