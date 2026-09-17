@@ -251,7 +251,7 @@ export class SubscriptionService {
     rawBody: Buffer | string,
     signature?: string
   ): Promise<{ processed: boolean; idempotent: boolean; eventType?: string }> {
-    let payload: Record<string, unknown>;
+    let payload: RazorpayWebhookPayload;
     const webhookSecret = env.RAZORPAY_WEBHOOK_SECRET;
 
     if (webhookSecret && signature) {
