@@ -22,7 +22,7 @@ import { useAuth } from "../../hooks/useAuth";
 export const SubscriberLayout: React.FC = () => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const { data: subData, isLoading: subLoading } = useSubscriptionStatus();
-  const { user, logout } = useAuth();
+  const { user, isLoading: authLoading, logout } = useAuth();
   const navigate = useNavigate();
 
   const handleLogout = async () => {
@@ -32,6 +32,19 @@ export const SubscriberLayout: React.FC = () => {
 
   const isSubActive = subData?.hasActiveSubscription;
   const isCanceledPending = subData?.cancelAtPeriodEnd;
+
+  const displayName = user
+    ? user.role === "ADMIN"
+      ? "Admin"
+      : user.displayName || user.fullName || "Member"
+    : "Member";
+
+  const initialLetter =
+    user?.role === "ADMIN"
+      ? "A"
+      : displayName !== "Member"
+      ? displayName.charAt(0).toUpperCase()
+      : "M";
 
   return (
     <div className="min-h-screen flex bg-chalk font-sans text-evergreen-950">
@@ -242,14 +255,26 @@ export const SubscriberLayout: React.FC = () => {
 
             <div className="flex items-center gap-3 pl-3 border-l border-evergreen-200">
               <div className="w-8 h-8 rounded-full bg-evergreen-800 text-white font-bold text-xs flex items-center justify-center shadow-sm">
-                {user?.fullName ? user.fullName.charAt(0).toUpperCase() : "M"}
+                {authLoading ? (
+                  <span className="w-3 h-3 rounded-full border border-white border-t-transparent animate-spin" />
+                ) : (
+                  initialLetter
+                )}
               </div>
               <div className="hidden md:flex flex-col text-left">
                 <span className="text-xs font-bold text-evergreen-950 leading-tight">
-                  {user?.fullName || "Member Player"}
+                  {authLoading ? (
+                    <span className="inline-block w-24 h-3 bg-evergreen-100 rounded animate-pulse" />
+                  ) : (
+                    displayName
+                  )}
                 </span>
                 <span className="text-[10px] text-evergreen-600 font-medium">
-                  {user?.email || "subscriber@fairwayforward.com"}
+                  {authLoading ? (
+                    <span className="inline-block w-32 h-2.5 bg-evergreen-50 rounded animate-pulse mt-1" />
+                  ) : (
+                    user?.email || ""
+                  )}
                 </span>
               </div>
             </div>

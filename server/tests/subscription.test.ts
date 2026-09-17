@@ -3,34 +3,18 @@ import request from "supertest";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { app } from "../src/app.js";
 import { prisma } from "../src/config/prisma.js";
-import { stripe } from "../src/config/stripe.js";
+import { razorpay } from "../src/config/razorpay.js";
 import { supabaseServer } from "../src/config/supabase.js";
 
 vi.mock("../src/config/supabase.js", () => ({
   supabaseServer: { auth: { getUser: vi.fn() } },
 }));
 
-vi.mock("../src/config/stripe.js", () => ({
-  stripe: {
-    customers: {
-      create: vi.fn().mockResolvedValue({ id: "cus_mock_123" }),
-    },
-    checkout: {
-      sessions: {
-        create: vi.fn().mockResolvedValue({
-          id: "cs_mock_123",
-          url: "http://localhost:5173/subscription/success?session_id=cs_mock_123",
-        }),
-      },
-    },
+vi.mock("../src/config/razorpay.js", () => ({
+  razorpay: {
     subscriptions: {
-      update: vi.fn().mockResolvedValue({
-        id: "sub_stripe_123",
-        cancel_at_period_end: true,
-      }),
-    },
-    webhooks: {
-      constructEvent: vi.fn(),
+      create: vi.fn().mockResolvedValue({ id: "sub_rzp_mock_123" }),
+      cancel: vi.fn().mockResolvedValue({ id: "sub_rzp_mock_123" }),
     },
   },
 }));
@@ -68,8 +52,8 @@ const mockUser = {
 const mockSubscription = {
   id: "sub-1",
   userId: "user-sub-123",
-  stripeCustomerId: "cus_123",
-  stripeSubscriptionId: "sub_stripe_123",
+  providerCustomerId: "cus_123",
+  providerSubscriptionId: "sub_rzp_mock_123",
   plan: Plan.MONTHLY,
   status: SubscriptionStatus.ACTIVE,
   currentPeriodStart: new Date(),
@@ -89,18 +73,11 @@ function setupAuthUser(user = mockUser) {
 
 beforeEach(() => {
   vi.resetAllMocks();
-  vi.mocked(stripe.customers.create).mockResolvedValue({ id: "cus_mock_123" } as any);
-  vi.mocked(stripe.checkout.sessions.create).mockResolvedValue({
-    id: "cs_mock_123",
-    url: "http://localhost:5173/subscription/success?session_id=cs_mock_123",
-  } as any);
-  vi.mocked(stripe.subscriptions.update).mockResolvedValue({
-    id: "sub_stripe_123",
-    cancel_at_period_end: true,
-  } as any);
+  vi.mocked(razorpay.subscriptions.create).mockResolvedValue({ id: "sub_rzp_mock_123" } as any);
+  vi.mocked(razorpay.subscriptions.cancel).mockResolvedValue({ id: "sub_rzp_mock_123" } as any);
 });
 
-describe("Subscription API — Phase 4", () => {
+describe("Subscription API — Razorpay Test Mode Integration", () => {
   describe("1. Authentication checks", () => {
     it("returns 401 when accessing GET /api/v1/subscription unauthenticated", async () => {
       const res = await request(app).get("/api/v1/subscription");
@@ -138,7 +115,7 @@ describe("Subscription API — Phase 4", () => {
   });
 
   describe("3. POST /api/v1/subscription/checkout — plan validation", () => {
-    it("accepts MONTHLY plan and creates checkout session", async () => {
+    it("accepts MONTHLY plan and creates Razorpay subscription", async () => {
       setupAuthUser();
       vi.mocked(prisma.subscription.findUnique).mockResolvedValueOnce(null);
       vi.mocked(prisma.subscription.upsert).mockResolvedValueOnce(mockSubscription);
@@ -150,10 +127,10 @@ describe("Subscription API — Phase 4", () => {
 
       expect(res.status).toBe(200);
       expect(res.body.success).toBe(true);
-      expect(res.body.data.sessionId).toBeDefined();
+      expect(res.body.data.subscriptionId).toBeDefined();
     });
 
-    it("accepts YEARLY plan and creates checkout session", async () => {
+    it("accepts YEARLY plan and creates Razorpay subscription", async () => {
       setupAuthUser();
       vi.mocked(prisma.subscription.findUnique).mockResolvedValueOnce(null);
       vi.mocked(prisma.subscription.upsert).mockResolvedValueOnce({

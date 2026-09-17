@@ -3,6 +3,7 @@ import {
   cancelSubscription,
   createCheckoutSession,
   fetchSubscription,
+  verifyPayment,
 } from "../api/subscriptionApi";
 import { SubscriptionPlans } from "../components/SubscriptionPlans";
 import { SubscriptionStatusView } from "../components/SubscriptionStatus";
@@ -23,7 +24,36 @@ export function SubscriptionPage() {
   const checkoutMutation = useMutation({
     mutationFn: (plan: "MONTHLY" | "YEARLY") => createCheckoutSession(plan),
     onSuccess: (data) => {
-      if (data.url) {
+      const subId = data.subscriptionId || data.sessionId;
+      const keyId = data.keyId || import.meta.env.VITE_RAZORPAY_KEY_ID || "";
+
+      if (subId && typeof window !== "undefined" && window.Razorpay) {
+        const options = {
+          key: keyId,
+          subscription_id: subId,
+          name: "Fairway Forward",
+          description: "Golf & Charity Performance Subscription",
+          theme: { color: "#059669" },
+          handler: async function (response: {
+            razorpay_payment_id: string;
+            razorpay_subscription_id: string;
+            razorpay_signature: string;
+          }) {
+            try {
+              await verifyPayment({
+                paymentId: response.razorpay_payment_id,
+                subscriptionId: response.razorpay_subscription_id,
+                signature: response.razorpay_signature,
+              });
+            } catch (err) {
+              console.error("Verification error:", err);
+            }
+            queryClient.invalidateQueries({ queryKey: ["subscription"] });
+          },
+        };
+        const rzp = new window.Razorpay(options);
+        rzp.open();
+      } else if (data.url) {
         window.location.href = data.url;
       }
     },

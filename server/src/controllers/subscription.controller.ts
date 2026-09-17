@@ -38,6 +38,8 @@ export async function createCheckoutSession(req: Request, res: Response): Promis
     res.status(200).json({
       success: true,
       data: {
+        subscriptionId: session.subscriptionId,
+        keyId: session.keyId,
         sessionId: session.sessionId,
         url: session.url,
       },
@@ -48,7 +50,46 @@ export async function createCheckoutSession(req: Request, res: Response): Promis
     res.status(isDuplicate ? 400 : 500).json({
       success: false,
       error: {
-        code: isDuplicate ? "SUBSCRIPTION_ALREADY_ACTIVE" : "STRIPE_CHECKOUT_ERROR",
+        code: isDuplicate ? "SUBSCRIPTION_ALREADY_ACTIVE" : "RAZORPAY_CHECKOUT_ERROR",
+        message,
+      },
+    });
+  }
+}
+
+export async function verifyPayment(req: Request, res: Response): Promise<void> {
+  const user = req.user!;
+  const { paymentId, subscriptionId, signature } = req.body;
+
+  if (!paymentId || !subscriptionId || !signature) {
+    res.status(400).json({
+      success: false,
+      error: {
+        code: "INVALID_VERIFICATION_PAYLOAD",
+        message: "Missing paymentId, subscriptionId, or signature",
+      },
+    });
+    return;
+  }
+
+  try {
+    await SubscriptionService.verifyCheckoutPayment(
+      user.id,
+      paymentId,
+      subscriptionId,
+      signature
+    );
+
+    res.status(200).json({
+      success: true,
+      data: { verified: true },
+    });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "Payment verification failed";
+    res.status(400).json({
+      success: false,
+      error: {
+        code: "INVALID_SIGNATURE",
         message,
       },
     });
@@ -79,7 +120,7 @@ export async function cancelSubscription(req: Request, res: Response): Promise<v
     res.status(isNotFound ? 404 : 400).json({
       success: false,
       error: {
-        code: isNotFound ? "SUBSCRIPTION_NOT_FOUND" : "STRIPE_CONFIGURATION_ERROR",
+        code: isNotFound ? "SUBSCRIPTION_NOT_FOUND" : "RAZORPAY_CONFIGURATION_ERROR",
         message,
       },
     });

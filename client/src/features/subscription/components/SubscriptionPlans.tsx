@@ -60,7 +60,7 @@ export function SubscriptionPlans({ onSelectPlan, isLoading }: SubscriptionPlans
             onClick={() => onSelectPlan("MONTHLY")}
             className="mt-8 w-full py-2.5 px-4 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-medium transition-colors disabled:opacity-50"
           >
-            {isLoading && selectedPlan === "MONTHLY" ? "Redirecting to Stripe..." : "Subscribe Monthly"}
+            {isLoading && selectedPlan === "MONTHLY" ? "Opening Razorpay Checkout..." : "Subscribe Monthly"}
           </button>
         </div>
 
@@ -106,7 +106,7 @@ export function SubscriptionPlans({ onSelectPlan, isLoading }: SubscriptionPlans
             onClick={() => onSelectPlan("YEARLY")}
             className="mt-8 w-full py-2.5 px-4 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-medium transition-colors disabled:opacity-50"
           >
-            {isLoading && selectedPlan === "YEARLY" ? "Redirecting to Stripe..." : "Subscribe Yearly"}
+            {isLoading && selectedPlan === "YEARLY" ? "Opening Razorpay Checkout..." : "Subscribe Yearly"}
           </button>
         </div>
       </div>

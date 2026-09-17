@@ -1,11 +1,40 @@
 import { Plan, SubscriptionStatus } from "@prisma/client";
-import type Stripe from "stripe";
 import { env } from "../config/env.js";
 import { prisma } from "../config/prisma.js";
-import { stripe } from "../config/stripe.js";
+import { RazorpayPaymentProvider } from "./paymentProvider.service.js";
 
 export interface CreateCheckoutInput {
   plan: "MONTHLY" | "YEARLY";
+}
+
+interface RazorpayEntity {
+  id?: string;
+  subscription_id?: string;
+  plan_id?: string;
+  status?: string;
+  current_start?: number;
+  current_end?: number;
+  notes?: {
+    userId?: string;
+    plan?: string;
+  };
+}
+
+interface RazorpayWebhookPayload {
+  id?: string;
+  event?: string;
+  type?: string;
+  event_id?: string;
+  created_at?: number;
+  entity?: RazorpayEntity;
+  payload?: {
+    subscription?: {
+      entity?: RazorpayEntity;
+    };
+    payment?: {
+      entity?: RazorpayEntity;
+    };
+  };
 }
 
 export class SubscriptionService {
@@ -84,13 +113,13 @@ export class SubscriptionService {
   }
 
   /**
-   * Creates a Stripe Checkout Session for subscription purchase.
+   * Creates a Razorpay Subscription Checkout for subscription purchase.
    */
   static async createCheckoutSession(
     userId: string,
     userEmail: string,
     input: CreateCheckoutInput
-  ): Promise<{ sessionId: string; url: string | null }> {
+  ): Promise<{ subscriptionId: string; keyId: string; sessionId: string; url: string | null }> {
     const { plan } = input;
 
     // Check for existing active subscription
@@ -107,74 +136,33 @@ export class SubscriptionService {
       throw new Error("User already has an active subscription");
     }
 
-    // Resolve Price ID server-side from environment variables
-    const priceId =
-      plan === "MONTHLY"
-        ? env.STRIPE_MONTHLY_PRICE_ID || "price_monthly_placeholder"
-        : env.STRIPE_YEARLY_PRICE_ID || "price_yearly_placeholder";
+    // Create subscription with Razorpay provider
+    const result = await RazorpayPaymentProvider.createSubscription({
+      plan,
+      userId,
+      userEmail,
+    });
 
-    // Retrieve or create Stripe Customer ID
-    let stripeCustomerId = existingSubscription?.stripeCustomerId;
-
-    if (!stripeCustomerId) {
-      try {
-        const customer = await stripe.customers.create({
-          email: userEmail,
-          metadata: { userId },
-        });
-        stripeCustomerId = customer.id;
-      } catch {
-        // Fallback for offline/test environments
-        stripeCustomerId = `cus_mock_${userId}`;
-      }
-    }
-
-    // Upsert local subscription record with Stripe Customer ID
+    // Upsert local subscription record with provider subscription ID
     await prisma.subscription.upsert({
       where: { userId },
       create: {
         userId,
-        stripeCustomerId,
+        providerSubscriptionId: result.subscriptionId,
         plan: plan === "MONTHLY" ? Plan.MONTHLY : Plan.YEARLY,
         status: SubscriptionStatus.INACTIVE,
       },
       update: {
-        stripeCustomerId,
+        providerSubscriptionId: result.subscriptionId,
         plan: plan === "MONTHLY" ? Plan.MONTHLY : Plan.YEARLY,
       },
     });
 
-    // Create Stripe Checkout Session
-    let session: { id: string; url: string | null };
-    try {
-      session = await stripe.checkout.sessions.create({
-        customer: stripeCustomerId,
-        payment_method_types: ["card"],
-        mode: "subscription",
-        line_items: [
-          {
-            price: priceId,
-            quantity: 1,
-          },
-        ],
-        success_url: env.STRIPE_SUCCESS_URL,
-        cancel_url: env.STRIPE_CANCEL_URL,
-        metadata: {
-          userId,
-          plan,
-        },
-      });
-    } catch {
-      // Mock session fallback for test environments without active Stripe secret key
-      session = {
-        id: `cs_mock_${Date.now()}`,
-        url: `${env.STRIPE_SUCCESS_URL}?session_id=cs_mock_${Date.now()}`,
-      };
-    }
-
     return {
-      sessionId: session.id,
-      url: session.url,
+      subscriptionId: result.subscriptionId,
+      keyId: result.keyId,
+      sessionId: result.subscriptionId,
+      url: null,
     };
   }
 
@@ -188,7 +176,7 @@ export class SubscriptionService {
 
     if (
       !subscription ||
-      !subscription.stripeSubscriptionId ||
+      !subscription.providerSubscriptionId ||
       subscription.status === SubscriptionStatus.INACTIVE ||
       subscription.status === SubscriptionStatus.CANCELED
     ) {
@@ -199,14 +187,8 @@ export class SubscriptionService {
       return subscription;
     }
 
-    // Call Stripe to cancel at period end
-    try {
-      await stripe.subscriptions.update(subscription.stripeSubscriptionId, {
-        cancel_at_period_end: true,
-      });
-    } catch {
-      // Ignore Stripe API error in test/mock environment
-    }
+    // Call Razorpay to cancel at period end
+    await RazorpayPaymentProvider.cancelSubscription(subscription.providerSubscriptionId);
 
     // Update local database record to reflect cancelAtPeriodEnd
     return await prisma.subscription.update({
@@ -218,104 +200,182 @@ export class SubscriptionService {
   }
 
   /**
-   * Verifies and processes incoming Stripe webhooks idempotently.
+   * Server-side signature verification of checkout completion.
    */
-  static async handleStripeWebhook(
+  static async verifyCheckoutPayment(
+    userId: string,
+    paymentId: string,
+    subscriptionId: string,
+    signature: string
+  ): Promise<boolean> {
+    const isValid = RazorpayPaymentProvider.verifyCheckoutSignature(
+      paymentId,
+      subscriptionId,
+      signature
+    );
+
+    if (!isValid) {
+      throw new Error("Invalid Razorpay payment signature");
+    }
+
+    // Local subscription verification check
+    const localSub = await prisma.subscription.findFirst({
+      where: {
+        OR: [
+          { providerSubscriptionId: subscriptionId },
+          { userId },
+        ],
+      },
+    });
+
+    if (localSub && localSub.status === SubscriptionStatus.INACTIVE) {
+      const durationDays = localSub.plan === Plan.YEARLY ? 365 : 30;
+      await prisma.subscription.update({
+        where: { id: localSub.id },
+        data: {
+          providerSubscriptionId: subscriptionId,
+          status: SubscriptionStatus.ACTIVE,
+          currentPeriodStart: new Date(),
+          currentPeriodEnd: new Date(Date.now() + durationDays * 24 * 60 * 60 * 1000),
+        },
+      });
+    }
+
+    return true;
+  }
+
+  /**
+   * Verifies and processes incoming Razorpay webhooks idempotently.
+   */
+  static async handleRazorpayWebhook(
     rawBody: Buffer | string,
     signature?: string
   ): Promise<{ processed: boolean; idempotent: boolean; eventType?: string }> {
-    let event: Stripe.Event;
-
-    const webhookSecret = env.STRIPE_WEBHOOK_SECRET;
+    let payload: Record<string, unknown>;
+    const webhookSecret = env.RAZORPAY_WEBHOOK_SECRET;
 
     if (webhookSecret && signature) {
-      try {
-        event = stripe.webhooks.constructEvent(rawBody, signature, webhookSecret);
-      } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : "Invalid signature";
-        throw new Error(`Webhook Signature Verification Failed: ${msg}`);
-      }
-    } else {
-      // If webhook secret is not set, parse JSON body directly (for local development/tests)
-      try {
-        event = typeof rawBody === "string" ? JSON.parse(rawBody) : JSON.parse(rawBody.toString("utf8"));
-      } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : "Invalid JSON payload";
-        throw new Error(`Webhook Parsing Failed: ${msg}`);
+      const isValid = RazorpayPaymentProvider.verifyWebhookSignature(
+        rawBody,
+        signature,
+        webhookSecret
+      );
+      if (!isValid) {
+        throw new Error("Webhook Signature Verification Failed: Invalid signature");
       }
     }
 
-    if (!event || !event.id || !event.type) {
-      throw new Error("Invalid Stripe event structure");
+    try {
+      payload = typeof rawBody === "string" ? JSON.parse(rawBody) : JSON.parse(rawBody.toString("utf8"));
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Invalid JSON payload";
+      throw new Error(`Webhook Parsing Failed: ${msg}`);
+    }
+
+    const eventName: string = payload.event || payload.type || "";
+    const eventId: string =
+      payload.id ||
+      payload.event_id ||
+      `${payload.payload?.subscription?.entity?.id || "sub"}_${eventName}_${payload.created_at || Date.now()}`;
+
+    if (!eventName) {
+      throw new Error("Invalid Razorpay event structure");
     }
 
     // Check for idempotency in WebhookEvent table
     const existingEvent = await prisma.webhookEvent.findUnique({
-      where: { stripeEventId: event.id },
+      where: { eventId },
     });
 
     if (existingEvent) {
-      return { processed: true, idempotent: true, eventType: event.type };
+      return { processed: true, idempotent: true, eventType: eventName };
     }
 
     // Record webhook event and process subscription state update
     await prisma.$transaction(async (tx) => {
       await tx.webhookEvent.create({
         data: {
-          stripeEventId: event.id,
-          eventType: event.type,
-          payload: JSON.parse(JSON.stringify(event)),
+          eventId,
+          eventType: eventName,
+          payload: JSON.parse(JSON.stringify(payload)),
         },
       });
 
-      await this.processStripeEvent(tx, event);
+      await this.processRazorpayEvent(tx, payload, eventName);
     });
 
-    return { processed: true, idempotent: false, eventType: event.type };
+    return { processed: true, idempotent: false, eventType: eventName };
   }
 
   /**
-   * Helper to process Stripe subscription lifecycle events inside database transaction.
+   * Helper to process Razorpay subscription lifecycle events inside database transaction.
    */
-  private static async processStripeEvent(
+
+
+  private static async processRazorpayEvent(
     tx: Omit<typeof prisma, "$connect" | "$disconnect" | "$on" | "$transaction" | "$use" | "$extends">,
-    event: Stripe.Event
+    payload: RazorpayWebhookPayload,
+    eventName: string
   ): Promise<void> {
-    switch (event.type) {
-      case "checkout.session.completed": {
-        const session = event.data.object as Stripe.Checkout.Session;
-        const userId = session.metadata?.userId;
-        const planStr = session.metadata?.plan;
+    const subEntity = payload.payload?.subscription?.entity || payload.entity;
+    const providerSubscriptionId = subEntity?.id || subEntity?.subscription_id;
+    const notes = subEntity?.notes || {};
+    const userId = notes.userId;
 
-        if (userId) {
-          const plan = planStr === "YEARLY" ? Plan.YEARLY : Plan.MONTHLY;
-          const stripeSubscriptionId =
-            typeof session.subscription === "string"
-              ? session.subscription
-              : session.subscription?.id || null;
-          const stripeCustomerId =
-            typeof session.customer === "string"
-              ? session.customer
-              : session.customer?.id || null;
+    switch (eventName) {
+      case "subscription.authenticated":
+      case "subscription.activated":
+      case "subscription.charged": {
+        const planStr = notes.plan || (subEntity?.plan_id === env.RAZORPAY_YEARLY_PLAN_ID ? "YEARLY" : "MONTHLY");
+        const plan = planStr === "YEARLY" ? Plan.YEARLY : Plan.MONTHLY;
+        const durationDays = plan === Plan.YEARLY ? 365 : 30;
 
+        const currentStart = subEntity?.current_start
+          ? new Date(subEntity.current_start * 1000)
+          : new Date();
+        const currentEnd = subEntity?.current_end
+          ? new Date(subEntity.current_end * 1000)
+          : new Date(Date.now() + durationDays * 24 * 60 * 60 * 1000);
+
+        // Find existing subscription by userId or providerSubscriptionId
+        const localSub = await tx.subscription.findFirst({
+          where: {
+            OR: [
+              ...(userId ? [{ userId }] : []),
+              ...(providerSubscriptionId ? [{ providerSubscriptionId }] : []),
+            ],
+          },
+        });
+
+        if (localSub) {
+          await tx.subscription.update({
+            where: { id: localSub.id },
+            data: {
+              providerSubscriptionId: providerSubscriptionId || localSub.providerSubscriptionId,
+              plan,
+              status: SubscriptionStatus.ACTIVE,
+              currentPeriodStart: currentStart,
+              currentPeriodEnd: currentEnd,
+              cancelAtPeriodEnd: false,
+            },
+          });
+        } else if (userId) {
           await tx.subscription.upsert({
             where: { userId },
             create: {
               userId,
-              stripeCustomerId,
-              stripeSubscriptionId,
+              providerSubscriptionId,
               plan,
               status: SubscriptionStatus.ACTIVE,
-              currentPeriodStart: new Date(),
-              currentPeriodEnd: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+              currentPeriodStart: currentStart,
+              currentPeriodEnd: currentEnd,
             },
             update: {
-              stripeCustomerId: stripeCustomerId || undefined,
-              stripeSubscriptionId: stripeSubscriptionId || undefined,
+              providerSubscriptionId,
               plan,
               status: SubscriptionStatus.ACTIVE,
-              currentPeriodStart: new Date(),
-              currentPeriodEnd: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+              currentPeriodStart: currentStart,
+              currentPeriodEnd: currentEnd,
               cancelAtPeriodEnd: false,
             },
           });
@@ -323,63 +383,37 @@ export class SubscriptionService {
         break;
       }
 
-      case "customer.subscription.created":
-      case "customer.subscription.updated": {
-        const sub = event.data.object as unknown as Record<string, unknown>;
-        const stripeSubscriptionId = String(sub.id || "");
-        const stripeCustomerId =
-          typeof sub.customer === "string"
-            ? sub.customer
-            : (sub.customer as { id?: string })?.id || null;
-
-        const statusMap: Record<string, SubscriptionStatus> = {
-          active: SubscriptionStatus.ACTIVE,
-          trialing: SubscriptionStatus.TRIALING,
-          past_due: SubscriptionStatus.PAST_DUE,
-          canceled: SubscriptionStatus.CANCELED,
-          unpaid: SubscriptionStatus.INACTIVE,
-          incomplete: SubscriptionStatus.INACTIVE,
-          incomplete_expired: SubscriptionStatus.INACTIVE,
-        };
-
-        const subStatusStr = typeof sub.status === "string" ? sub.status : "";
-        const localStatus = statusMap[subStatusStr] || SubscriptionStatus.INACTIVE;
-
-        // Find matching subscription by stripeSubscriptionId or stripeCustomerId
+      case "subscription.pending":
+      case "subscription.halted": {
         const localSub = await tx.subscription.findFirst({
           where: {
             OR: [
-              { stripeSubscriptionId },
-              { stripeCustomerId },
+              ...(userId ? [{ userId }] : []),
+              ...(providerSubscriptionId ? [{ providerSubscriptionId }] : []),
             ],
           },
         });
 
         if (localSub) {
-          const cancelAtEnd = Boolean(sub.cancel_at_period_end);
-          const startSec = typeof sub.current_period_start === "number" ? sub.current_period_start : null;
-          const endSec = typeof sub.current_period_end === "number" ? sub.current_period_end : null;
-
           await tx.subscription.update({
             where: { id: localSub.id },
             data: {
-              stripeSubscriptionId,
-              status: localStatus,
-              cancelAtPeriodEnd: cancelAtEnd,
-              currentPeriodStart: startSec ? new Date(startSec * 1000) : undefined,
-              currentPeriodEnd: endSec ? new Date(endSec * 1000) : undefined,
+              status: SubscriptionStatus.PAST_DUE,
             },
           });
         }
         break;
       }
 
-      case "customer.subscription.deleted": {
-        const sub = event.data.object as unknown as Record<string, unknown>;
-        const stripeSubscriptionId = String(sub.id || "");
-
+      case "subscription.cancelled":
+      case "subscription.completed": {
         const localSub = await tx.subscription.findFirst({
-          where: { stripeSubscriptionId },
+          where: {
+            OR: [
+              ...(userId ? [{ userId }] : []),
+              ...(providerSubscriptionId ? [{ providerSubscriptionId }] : []),
+            ],
+          },
         });
 
         if (localSub) {
@@ -394,32 +428,27 @@ export class SubscriptionService {
         break;
       }
 
-      case "invoice.payment_failed": {
-        const invoice = event.data.object as unknown as Record<string, unknown>;
-        const stripeSubscriptionId =
-          typeof invoice.subscription === "string"
-            ? invoice.subscription
-            : (invoice.subscription as { id?: string })?.id;
-
-        if (stripeSubscriptionId) {
-          const localSub = await tx.subscription.findFirst({
-            where: { stripeSubscriptionId },
-          });
-
-          if (localSub) {
-            await tx.subscription.update({
-              where: { id: localSub.id },
-              data: {
-                status: SubscriptionStatus.PAST_DUE,
-              },
-            });
-          }
-        }
-        break;
-      }
-
       default:
-        // Other events ignored
+        // Handle checkout.session.completed or legacy fallback for compatibility
+        if (eventName === "checkout.session.completed" && userId) {
+          await tx.subscription.upsert({
+            where: { userId },
+            create: {
+              userId,
+              providerSubscriptionId,
+              plan: Plan.MONTHLY,
+              status: SubscriptionStatus.ACTIVE,
+              currentPeriodStart: new Date(),
+              currentPeriodEnd: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+            },
+            update: {
+              status: SubscriptionStatus.ACTIVE,
+              currentPeriodStart: new Date(),
+              currentPeriodEnd: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+              cancelAtPeriodEnd: false,
+            },
+          });
+        }
         break;
     }
   }

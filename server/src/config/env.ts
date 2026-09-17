@@ -11,12 +11,11 @@ const envSchema = z.object({
   SUPABASE_URL: z.string().optional().default("https://placeholder.supabase.co"),
   SUPABASE_ANON_KEY: z.string().optional().default("placeholder-anon-key"),
   SUPABASE_SERVICE_ROLE_KEY: z.string().optional().default("placeholder-service-role-key"),
-  STRIPE_SECRET_KEY: z.string().optional(),
-  STRIPE_WEBHOOK_SECRET: z.string().optional(),
-  STRIPE_MONTHLY_PRICE_ID: z.string().optional(),
-  STRIPE_YEARLY_PRICE_ID: z.string().optional(),
-  STRIPE_SUCCESS_URL: z.string().optional().default("http://localhost:5173/subscription/success"),
-  STRIPE_CANCEL_URL: z.string().optional().default("http://localhost:5173/subscription/cancel"),
+  RAZORPAY_KEY_ID: z.string().optional().default("rzp_test_placeholder"),
+  RAZORPAY_KEY_SECRET: z.string().optional().default("secret_placeholder"),
+  RAZORPAY_WEBHOOK_SECRET: z.string().optional(),
+  RAZORPAY_MONTHLY_PLAN_ID: z.string().optional().default("plan_monthly_placeholder"),
+  RAZORPAY_YEARLY_PLAN_ID: z.string().optional().default("plan_yearly_placeholder"),
   PRIZE_POOL_PERCENTAGE: z.string().optional(),
 });
 

@@ -24,7 +24,7 @@ Fairway Forward connects amateur golf performance with social impact and prize i
 Users register using Supabase Auth with email and password credentials.
 
 ### Step 2 — Subscribe
-Users select a subscription plan (`MONTHLY` or `YEARLY`) processed via Stripe Checkout. Active subscriber status unlocks score logging, charity selection, draw participation, and winnings claims.
+Users select a subscription plan (`MONTHLY` or `YEARLY`) processed via Razorpay Subscriptions in Test Mode. Active subscriber status unlocks score logging, charity selection, draw participation, and winnings claims.
 
 ### Step 3 — Choose a Charity
 Subscribers select a verified charity from the directory and configure their contribution percentage (minimum 10%, with voluntary increase up to 100%).
@@ -58,7 +58,7 @@ When a subscriber wins:
 ## 3. User Features
 
 * **Authentication**: Email/password registration, login, session persistence, and logout via Supabase Auth.
-* **Subscription Management**: Plan selection (`MONTHLY`/`YEARLY`), Stripe test checkout redirect, renewal visibility, and period-end cancellation.
+* **Subscription Management**: Plan selection (`MONTHLY`/`YEARLY`), Razorpay Test Checkout modal, renewal visibility, and period-end cancellation.
 * **Charity Selection**: Browse charity directory, view charity details, select active charity, and configure voluntary contribution percentage ($\ge 10\%$).
 * **Score Management**: Log Stableford scores (1–45), enforce unique date rule, auto-prune to latest 5 scores, edit/delete existing score entries.
 * **Draw Entry & Archive**: View generated draw numbers, inspect upcoming draw countdowns, and browse historical published draw archives.
@@ -126,7 +126,7 @@ When a subscriber wins:
 * **Storage**: Supabase Storage (private bucket with presigned URLs)
 
 ### Payments & External Services
-* **Payments**: Stripe (Checkout Sessions & Webhook Event Sync)
+* **Payments**: Razorpay Subscriptions (Test Mode & Webhook Event Sync)
 
 ### Testing
 * **Runner**: Vitest
@@ -186,7 +186,7 @@ fairway-forward/
 * **Node.js**: v18.x or higher
 * **npm**: v9.x or higher
 * **PostgreSQL / Supabase**: Running PostgreSQL instance or Supabase project
-* **Stripe Account**: Stripe test mode API keys (optional for local payment testing)
+* **Razorpay Account**: Razorpay Test Mode API keys & test plan IDs (for local payment testing)
 
 ### 1. Clone & Install Dependencies
 
@@ -220,11 +220,12 @@ SUPABASE_URL="https://your-supabase-project.supabase.co"
 SUPABASE_ANON_KEY="your-anon-key"
 SUPABASE_SERVICE_ROLE_KEY="your-server-only-service-role-key"
 
-# Stripe Test Mode
-STRIPE_SECRET_KEY="sk_test_..."
-STRIPE_WEBHOOK_SECRET="whsec_..."
-STRIPE_MONTHLY_PRICE_ID="price_..."
-STRIPE_YEARLY_PRICE_ID="price_..."
+# Razorpay Test Mode Configuration
+RAZORPAY_KEY_ID="rzp_test_..."
+RAZORPAY_KEY_SECRET="secret_..."
+RAZORPAY_WEBHOOK_SECRET="whsecret_..."
+RAZORPAY_MONTHLY_PLAN_ID="plan_..."
+RAZORPAY_YEARLY_PLAN_ID="plan_..."
 
 # Client Origin & App Config
 CLIENT_URL="http://localhost:5173"
@@ -240,7 +241,26 @@ VITE_API_URL="http://localhost:5000"
 ```
 
 > [!CAUTION]
-> Never commit `.env` files or expose server-only keys (`SUPABASE_SERVICE_ROLE_KEY`, `STRIPE_SECRET_KEY`) in client environment variables.
+> Never commit `.env` files or expose server-only keys (`SUPABASE_SERVICE_ROLE_KEY`, `RAZORPAY_KEY_SECRET`, `RAZORPAY_WEBHOOK_SECRET`) in client environment variables.
+
+### 2.1 Razorpay Test Mode Plan & Webhook Setup
+
+1. **Create Razorpay Account & Switch to Test Mode**:
+   - Sign up / log in to [Razorpay Dashboard](https://dashboard.razorpay.com/).
+   - Toggle the mode switch at the top left of the dashboard to **Test Mode**.
+2. **Generate Test API Key ID & Secret**:
+   - Go to **Account & Settings** $\rightarrow$ **API Keys** $\rightarrow$ **Generate Test Key**.
+   - Copy `Key ID` and `Key Secret` into `RAZORPAY_KEY_ID` and `RAZORPAY_KEY_SECRET`.
+3. **Create Monthly & Yearly Test Plans**:
+   - Go to **Subscriptions** $\rightarrow$ **Plans** $\rightarrow$ **Create Plan**.
+   - **Monthly Plan**: Set Plan Name to `Monthly Membership`, Billing Frequency to `Monthly` (Interval `1`). Copy Plan ID (e.g. `plan_XXXXX`) to `RAZORPAY_MONTHLY_PLAN_ID`.
+   - **Yearly Plan**: Set Plan Name to `Annual Hero Pass`, Billing Frequency to `Yearly` (Interval `1`). Copy Plan ID (e.g. `plan_YYYYY`) to `RAZORPAY_YEARLY_PLAN_ID`.
+4. **Configure Webhook**:
+   - Go to **Settings** $\rightarrow$ **Webhooks** $\rightarrow$ **Add New Webhook**.
+   - Set Webhook URL to your public server endpoint: `https://<your-domain>/api/v1/webhooks/razorpay` (or ngrok URL for local development e.g. `https://<ngrok-id>.ngrok-free.app/api/v1/webhooks/razorpay`).
+   - Active Events: Select `subscription.authenticated`, `subscription.activated`, `subscription.charged`, `subscription.pending`, `subscription.halted`, `subscription.cancelled`, `subscription.completed`.
+   - Set a strong Webhook Secret and copy it to `RAZORPAY_WEBHOOK_SECRET`.
+
 
 ### 3. Database Setup
 
@@ -321,14 +341,15 @@ All backend endpoints are prefixed with `/api/v1`.
 * `PUT /api/v1/scores/:id` — Edit an existing score entry
 * `DELETE /api/v1/scores/:id` — Delete a score entry
 * `GET /api/v1/subscription` — Get active subscription status
-* `POST /api/v1/subscription/checkout` — Create Stripe Checkout session
+* `POST /api/v1/subscription/checkout` — Create Razorpay subscription checkout session
+* `POST /api/v1/subscription/verify` — Verify Razorpay checkout signature
 * `POST /api/v1/subscription/cancel` — Cancel subscription at period end
 * `GET /api/v1/me/winnings` — List user's prize winnings
 * `GET /api/v1/me/winnings/:id` — Get single winning detail
 * `POST /api/v1/me/winnings/:id/proof` — Upload winner scorecard proof screenshot
 
 ### Webhook Endpoints
-* `POST /api/v1/webhooks/stripe` — Stripe webhook receiver (Raw body signature verified)
+* `POST /api/v1/webhooks/razorpay` — Razorpay webhook receiver (Raw body signature verified via `X-Razorpay-Signature`)
 
 ### Admin Endpoints (`requireAdmin` middleware)
 * `POST /api/v1/admin/charities` — Create new charity
@@ -352,7 +373,7 @@ All backend endpoints are prefixed with `/api/v1`.
 * **Subscription Authorization**: `requireSubscription` enforces active subscription status for subscriber-only features.
 * **Data Ownership Scoping**: All user database operations are scoped to `req.user.id` to enforce strict data isolation between accounts.
 * **Private Storage & Presigned URLs**: Winner proof images are kept private in Supabase Storage. Access is granted exclusively via server-generated signed URLs with 15-minute expiration.
-* **Stripe Signature & Idempotency**: Stripe webhooks use raw body signature verification (`stripe.webhooks.constructEvent`) and log event IDs to `WebhookEvent` table for idempotency.
+* **Razorpay Signature & Idempotency**: Razorpay webhooks use raw body signature verification (`X-Razorpay-Signature` with HMAC-SHA256) and log event IDs to `WebhookEvent` table for idempotency.
 
 ---
 
@@ -389,7 +410,7 @@ All backend endpoints are prefixed with `/api/v1`.
 2. Create a private storage bucket named `winner-proofs` in Supabase Storage with `Public` disabled.
 
 ### Backend (Render / Railway / Fly.io)
-1. Set environment variables (`DATABASE_URL`, `SUPABASE_*`, `STRIPE_*`, `CLIENT_URL`).
+1. Set environment variables (`DATABASE_URL`, `SUPABASE_*`, `RAZORPAY_*`, `CLIENT_URL`).
 2. Build command: `npm run build`.
 3. Start command: `npm start` (`node dist/server.js`).
 
@@ -408,7 +429,7 @@ Fairway Forward is a full-stack golf performance and social impact web platform 
 * **Backend**: Complete REST API with Express, TypeScript, and Prisma ORM.
 * **Database**: Fully modeled PostgreSQL schema with migrations & seeding.
 * **Authentication**: Supabase Auth integration.
-* **Subscription System**: Stripe Checkout & Webhook handling.
+* **Subscription System**: Razorpay Subscriptions (Test Mode) & Webhook handling.
 * **Draw Engine**: Multi-tier draw engine with jackpot rollover & cyclic score normalization.
 * **Verification & Payouts**: Private storage proof verification & payout tracking.
 * **Automated Tests**: 92 server unit/integration tests passing.

@@ -1,11 +1,11 @@
 import { Request, Response } from "express";
 import { SubscriptionService } from "../services/subscription.service.js";
 
-export async function handleStripeWebhook(req: Request, res: Response): Promise<void> {
-  const signature = req.headers["stripe-signature"] as string | undefined;
+export async function handleRazorpayWebhook(req: Request, res: Response): Promise<void> {
+  const signature = req.headers["x-razorpay-signature"] as string | undefined;
 
   try {
-    const result = await SubscriptionService.handleStripeWebhook(
+    const result = await SubscriptionService.handleRazorpayWebhook(
       req.body,
       signature
     );
@@ -23,8 +23,8 @@ export async function handleStripeWebhook(req: Request, res: Response): Promise<
       success: false,
       error: {
         code: isSignatureError
-          ? "STRIPE_WEBHOOK_SIGNATURE_INVALID"
-          : "STRIPE_WEBHOOK_PROCESSING_ERROR",
+          ? "RAZORPAY_WEBHOOK_SIGNATURE_INVALID"
+          : "RAZORPAY_WEBHOOK_PROCESSING_ERROR",
         message,
       },
     });

@@ -23,8 +23,8 @@ vi.mock("../src/config/prisma.js", () => ({
 const mockSubscription = {
   id: "sub-1",
   userId: "user-sub-123",
-  stripeCustomerId: "cus_123",
-  stripeSubscriptionId: "sub_stripe_123",
+  providerCustomerId: "cus_123",
+  providerSubscriptionId: "sub_rzp_123",
   plan: Plan.MONTHLY,
   status: SubscriptionStatus.INACTIVE,
   currentPeriodStart: new Date(),
@@ -38,42 +38,46 @@ beforeEach(() => {
   vi.resetAllMocks();
 });
 
-describe("Stripe Webhook API — Phase 4", () => {
+describe("Razorpay Webhook API — Test Mode Integration", () => {
   describe("1. Idempotency & Verification", () => {
-    it("processes valid checkout.session.completed event and creates subscription", async () => {
+    it("processes valid subscription.activated event and activates subscription", async () => {
       vi.mocked(prisma.webhookEvent.findUnique).mockResolvedValueOnce(null);
       vi.mocked(prisma.$transaction).mockImplementationOnce(async (fn) => fn(prisma));
       vi.mocked(prisma.webhookEvent.create).mockResolvedValueOnce({
         id: "evt-db-1",
-        stripeEventId: "evt_test_checkout_1",
-        eventType: "checkout.session.completed",
+        eventId: "evt_rzp_checkout_1",
+        eventType: "subscription.activated",
         payload: {},
         processedAt: new Date(),
         createdAt: new Date(),
       });
-      vi.mocked(prisma.subscription.upsert).mockResolvedValueOnce({
+      vi.mocked(prisma.subscription.findFirst).mockResolvedValueOnce(mockSubscription);
+      vi.mocked(prisma.subscription.update).mockResolvedValueOnce({
         ...mockSubscription,
         status: SubscriptionStatus.ACTIVE,
       });
 
       const payload = {
-        id: "evt_test_checkout_1",
-        type: "checkout.session.completed",
-        data: {
-          object: {
-            id: "cs_123",
-            customer: "cus_123",
-            subscription: "sub_stripe_123",
-            metadata: {
-              userId: "user-sub-123",
-              plan: "MONTHLY",
+        id: "evt_rzp_checkout_1",
+        event: "subscription.activated",
+        payload: {
+          subscription: {
+            entity: {
+              id: "sub_rzp_123",
+              status: "active",
+              current_start: 1700000000,
+              current_end: 1702592000,
+              notes: {
+                userId: "user-sub-123",
+                plan: "MONTHLY",
+              },
             },
           },
         },
       };
 
       const res = await request(app)
-        .post("/api/v1/webhooks/stripe")
+        .post("/api/v1/webhooks/razorpay")
         .set("Content-Type", "application/json")
         .send(JSON.stringify(payload));
 
@@ -85,32 +89,32 @@ describe("Stripe Webhook API — Phase 4", () => {
     it("returns idempotent success without re-applying duplicate webhook event", async () => {
       vi.mocked(prisma.webhookEvent.findUnique).mockResolvedValueOnce({
         id: "evt-db-1",
-        stripeEventId: "evt_test_checkout_1",
-        eventType: "checkout.session.completed",
+        eventId: "evt_rzp_checkout_1",
+        eventType: "subscription.activated",
         payload: {},
         processedAt: new Date(),
         createdAt: new Date(),
       });
 
       const payload = {
-        id: "evt_test_checkout_1",
-        type: "checkout.session.completed",
-        data: { object: {} },
+        id: "evt_rzp_checkout_1",
+        event: "subscription.activated",
+        payload: {},
       };
 
       const res = await request(app)
-        .post("/api/v1/webhooks/stripe")
+        .post("/api/v1/webhooks/razorpay")
         .set("Content-Type", "application/json")
         .send(JSON.stringify(payload));
 
       expect(res.status).toBe(200);
       expect(res.body.idempotent).toBe(true);
-      expect(prisma.subscription.upsert).not.toHaveBeenCalled();
+      expect(prisma.subscription.update).not.toHaveBeenCalled();
     });
   });
 
   describe("2. Subscription Lifecycle Event Mapping", () => {
-    it("handles customer.subscription.updated to update status", async () => {
+    it("handles subscription.charged to update active status", async () => {
       vi.mocked(prisma.webhookEvent.findUnique).mockResolvedValueOnce(null);
       vi.mocked(prisma.$transaction).mockImplementationOnce(async (fn) => fn(prisma));
       vi.mocked(prisma.subscription.findFirst).mockResolvedValueOnce(mockSubscription);
@@ -120,22 +124,23 @@ describe("Stripe Webhook API — Phase 4", () => {
       });
 
       const payload = {
-        id: "evt_sub_updated_1",
-        type: "customer.subscription.updated",
-        data: {
-          object: {
-            id: "sub_stripe_123",
-            customer: "cus_123",
-            status: "active",
-            cancel_at_period_end: false,
-            current_period_start: 1700000000,
-            current_period_end: 1702592000,
+        id: "evt_sub_charged_1",
+        event: "subscription.charged",
+        payload: {
+          subscription: {
+            entity: {
+              id: "sub_rzp_123",
+              status: "active",
+              current_start: 1700000000,
+              current_end: 1702592000,
+              notes: { userId: "user-sub-123" },
+            },
           },
         },
       };
 
       const res = await request(app)
-        .post("/api/v1/webhooks/stripe")
+        .post("/api/v1/webhooks/razorpay")
         .set("Content-Type", "application/json")
         .send(JSON.stringify(payload));
 
@@ -143,7 +148,7 @@ describe("Stripe Webhook API — Phase 4", () => {
       expect(prisma.subscription.update).toHaveBeenCalled();
     });
 
-    it("handles customer.subscription.deleted to mark subscription CANCELED", async () => {
+    it("handles subscription.cancelled to mark subscription CANCELED", async () => {
       vi.mocked(prisma.webhookEvent.findUnique).mockResolvedValueOnce(null);
       vi.mocked(prisma.$transaction).mockImplementationOnce(async (fn) => fn(prisma));
       vi.mocked(prisma.subscription.findFirst).mockResolvedValueOnce(mockSubscription);
@@ -153,18 +158,20 @@ describe("Stripe Webhook API — Phase 4", () => {
       });
 
       const payload = {
-        id: "evt_sub_deleted_1",
-        type: "customer.subscription.deleted",
-        data: {
-          object: {
-            id: "sub_stripe_123",
-            customer: "cus_123",
+        id: "evt_sub_cancelled_1",
+        event: "subscription.cancelled",
+        payload: {
+          subscription: {
+            entity: {
+              id: "sub_rzp_123",
+              notes: { userId: "user-sub-123" },
+            },
           },
         },
       };
 
       const res = await request(app)
-        .post("/api/v1/webhooks/stripe")
+        .post("/api/v1/webhooks/razorpay")
         .set("Content-Type", "application/json")
         .send(JSON.stringify(payload));
 
@@ -172,7 +179,7 @@ describe("Stripe Webhook API — Phase 4", () => {
       expect(prisma.subscription.update).toHaveBeenCalled();
     });
 
-    it("handles invoice.payment_failed to mark status PAST_DUE", async () => {
+    it("handles subscription.halted to mark status PAST_DUE", async () => {
       vi.mocked(prisma.webhookEvent.findUnique).mockResolvedValueOnce(null);
       vi.mocked(prisma.$transaction).mockImplementationOnce(async (fn) => fn(prisma));
       vi.mocked(prisma.subscription.findFirst).mockResolvedValueOnce(mockSubscription);
@@ -182,18 +189,20 @@ describe("Stripe Webhook API — Phase 4", () => {
       });
 
       const payload = {
-        id: "evt_invoice_failed_1",
-        type: "invoice.payment_failed",
-        data: {
-          object: {
-            id: "in_123",
-            subscription: "sub_stripe_123",
+        id: "evt_sub_halted_1",
+        event: "subscription.halted",
+        payload: {
+          subscription: {
+            entity: {
+              id: "sub_rzp_123",
+              notes: { userId: "user-sub-123" },
+            },
           },
         },
       };
 
       const res = await request(app)
-        .post("/api/v1/webhooks/stripe")
+        .post("/api/v1/webhooks/razorpay")
         .set("Content-Type", "application/json")
         .send(JSON.stringify(payload));
 

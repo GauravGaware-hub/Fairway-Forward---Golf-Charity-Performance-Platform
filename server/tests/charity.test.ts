@@ -70,8 +70,8 @@ function setupAuthUser(user = mockUser) {
   vi.mocked(prisma.subscription.findUnique).mockResolvedValue({
     id: "sub-mock",
     userId: user.id,
-    stripeCustomerId: "cus_mock",
-    stripeSubscriptionId: "sub_mock",
+    providerCustomerId: "cus_mock",
+    providerSubscriptionId: "sub_mock",
     plan: "MONTHLY",
     status: "ACTIVE",
     currentPeriodStart: new Date(),

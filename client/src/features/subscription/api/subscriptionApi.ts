@@ -10,8 +10,16 @@ export interface UserSubscription {
 }
 
 export interface CheckoutResponse {
-  sessionId: string;
-  url: string | null;
+  subscriptionId?: string;
+  keyId?: string;
+  sessionId?: string;
+  url?: string | null;
+}
+
+export interface VerifyPaymentPayload {
+  paymentId: string;
+  subscriptionId: string;
+  signature: string;
 }
 
 export async function fetchSubscription(): Promise<UserSubscription> {
@@ -27,6 +35,13 @@ export async function createCheckoutSession(
     body: JSON.stringify({ plan }),
   });
   return res.data || (res as unknown as CheckoutResponse);
+}
+
+export async function verifyPayment(payload: VerifyPaymentPayload): Promise<void> {
+  await apiFetch("/api/v1/subscription/verify", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
 }
 
 export async function cancelSubscription(): Promise<void> {

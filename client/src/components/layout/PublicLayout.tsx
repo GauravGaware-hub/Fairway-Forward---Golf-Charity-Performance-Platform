@@ -164,7 +164,7 @@ export const PublicLayout: React.FC = () => {
               <ul className="space-y-2.5 text-sm text-evergreen-300">
                 <li className="flex items-center gap-1.5"><ShieldCheck className="w-4 h-4 text-emerald-400" /> 100% Verified Draws</li>
                 <li className="flex items-center gap-1.5"><Heart className="w-4 h-4 text-amber-400" /> 50% Net Charity Allocation</li>
-                <li className="text-xs text-evergreen-400">PCI-DSS Compliant Payments via Stripe</li>
+                <li className="text-xs text-evergreen-400">PCI-DSS Compliant Payments via Razorpay</li>
               </ul>
             </div>
 

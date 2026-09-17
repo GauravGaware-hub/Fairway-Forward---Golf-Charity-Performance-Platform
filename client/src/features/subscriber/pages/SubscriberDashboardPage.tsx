@@ -32,7 +32,7 @@ interface Draw {
 }
 
 export const SubscriberDashboardPage: React.FC = () => {
-  const { user } = useAuth();
+  const { user, isLoading: authLoading } = useAuth();
   const { data: subData } = useSubscriptionStatus();
 
   const { data: scoresData, isLoading: scoresLoading } = useQuery<{ scores: Score[] }>({
@@ -67,6 +67,12 @@ export const SubscriberDashboardPage: React.FC = () => {
   const draws = drawsData?.draws || [];
   const latestDraw = draws[0];
 
+  const greetingName = user
+    ? user.role === "ADMIN"
+      ? "Admin"
+      : user.firstName || user.displayName || user.fullName || "Member"
+    : "Member";
+
   return (
     <div className="space-y-8">
       {/* Welcome & Subscription Status Banner */}
@@ -77,7 +83,11 @@ export const SubscriberDashboardPage: React.FC = () => {
             <span>Subscriber Performance Dashboard</span>
           </div>
           <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight">
-            Welcome back, {user?.fullName || "Member Player"}
+            {authLoading ? (
+              <span className="inline-block w-48 h-8 bg-evergreen-800 rounded animate-pulse" />
+            ) : (
+              `Welcome back, ${greetingName}`
+            )}
           </h1>
           <p className="text-xs sm:text-sm text-evergreen-200">
             {isSubActive

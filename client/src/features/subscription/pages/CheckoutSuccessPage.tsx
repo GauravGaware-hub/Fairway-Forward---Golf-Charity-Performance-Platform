@@ -29,7 +29,7 @@ export function CheckoutSuccessPage() {
             </div>
             <h2 className="text-xl font-bold tracking-tight">Confirming Your Subscription</h2>
             <p className="mt-2 text-sm text-muted-foreground">
-              Thank you for completing checkout! We are currently confirming your payment with Stripe via secure webhook.
+              Thank you for completing checkout! We are currently confirming your payment with Razorpay via secure webhook.
             </p>
           </>
         ) : (

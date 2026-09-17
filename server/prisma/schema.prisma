@@ -135,8 +135,8 @@ model Subscription {
   id                   String             @id @default(uuid())
   userId               String             @unique
   user                 User               @relation(fields: [userId], references: [id], onDelete: Cascade)
-  stripeCustomerId     String?
-  stripeSubscriptionId String?            @unique
+  providerCustomerId   String?
+  providerSubscriptionId String?          @unique
   plan                 Plan
   status               SubscriptionStatus @default(INACTIVE)
   currentPeriodStart   DateTime?
@@ -145,20 +145,20 @@ model Subscription {
   createdAt            DateTime           @default(now())
   updatedAt            DateTime           @updatedAt
 
-  @@index([stripeCustomerId])
+  @@index([providerCustomerId])
   @@index([status])
   @@map("subscriptions")
 }
 
 model WebhookEvent {
-  id            String   @id @default(uuid())
-  stripeEventId String   @unique
-  eventType     String
-  payload       Json
-  processedAt   DateTime @default(now())
-  createdAt     DateTime @default(now())
+  id          String   @id @default(uuid())
+  eventId     String   @unique
+  eventType   String
+  payload     Json
+  processedAt DateTime @default(now())
+  createdAt   DateTime @default(now())
 
-  @@index([stripeEventId])
+  @@index([eventId])
   @@map("webhook_events")
 }
 

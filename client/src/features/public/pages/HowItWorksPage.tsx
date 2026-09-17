@@ -59,7 +59,7 @@ export const HowItWorksPage: React.FC = () => {
             </div>
             <div className="p-3 rounded-lg bg-emerald-900/60 border border-emerald-800 flex justify-between items-center text-xs">
               <span className="text-emerald-200">Platform Operations</span>
-              <span className="font-bold font-mono text-white">Stripe & Infrastructure</span>
+              <span className="font-bold font-mono text-white">Razorpay & Infrastructure</span>
             </div>
           </div>
         </div>

@@ -80,7 +80,7 @@ export const AdminReportsPage: React.FC = () => {
           <div className="text-3xl font-black font-mono text-white">
             PCI Compliant
           </div>
-          <p className="text-[11px] text-slate-400">Stripe payment gateway integration</p>
+          <p className="text-[11px] text-slate-400">Razorpay payment gateway integration</p>
         </div>
       </div>
 

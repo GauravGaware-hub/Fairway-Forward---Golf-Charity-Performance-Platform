@@ -19,9 +19,9 @@ export function createApp(): Express {
       credentials: true,
     })
   );
-  // Stripe Webhook Raw Body Parser (must run BEFORE express.json())
+  // Razorpay Webhook Raw Body Parser (must run BEFORE express.json())
   app.use(
-    "/api/v1/webhooks/stripe",
+    "/api/v1/webhooks/razorpay",
     express.raw({ type: "application/json" })
   );
 

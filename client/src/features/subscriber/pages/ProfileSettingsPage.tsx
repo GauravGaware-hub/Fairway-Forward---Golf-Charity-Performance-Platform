@@ -1,14 +1,24 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useAuth } from "../../../hooks/useAuth";
 import { apiFetch } from "../../../lib/api";
-import { User, Mail, CheckCircle2, AlertCircle, Award } from "lucide-react";
+import { User, Mail, Phone, CheckCircle2, AlertCircle, Award } from "lucide-react";
 
 export const ProfileSettingsPage: React.FC = () => {
   const { user, refreshUser } = useAuth();
-  const [fullName, setFullName] = useState(user?.fullName || "");
+  const [firstName, setFirstName] = useState(user?.profile?.firstName ?? user?.firstName ?? "");
+  const [lastName, setLastName] = useState(user?.profile?.lastName ?? user?.lastName ?? "");
+  const [phone, setPhone] = useState(user?.profile?.phone ?? "");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [feedbackMsg, setFeedbackMsg] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (user) {
+      setFirstName(user.profile?.firstName ?? user.firstName ?? "");
+      setLastName(user.profile?.lastName ?? user.lastName ?? "");
+      setPhone(user.profile?.phone ?? "");
+    }
+  }, [user]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -19,7 +29,11 @@ export const ProfileSettingsPage: React.FC = () => {
     try {
       await apiFetch("/api/v1/me", {
         method: "PATCH",
-        body: JSON.stringify({ fullName }),
+        body: JSON.stringify({
+          firstName: firstName.trim() || null,
+          lastName: lastName.trim() || null,
+          phone: phone.trim() || null,
+        }),
       });
       if (refreshUser) await refreshUser();
       setFeedbackMsg("Profile settings saved successfully!");
@@ -62,15 +76,48 @@ export const ProfileSettingsPage: React.FC = () => {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="space-y-1.5">
               <label className="text-xs font-bold text-evergreen-900 uppercase tracking-wider">
-                Full Name
+                First Name
               </label>
               <div className="relative">
                 <User className="w-4 h-4 text-evergreen-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
                 <input
                   type="text"
                   required
-                  value={fullName}
-                  onChange={(e) => setFullName(e.target.value)}
+                  value={firstName}
+                  onChange={(e) => setFirstName(e.target.value)}
+                  placeholder="First name"
+                  className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-evergreen-200 text-sm bg-chalk focus:outline-none focus:ring-2 focus:ring-emerald-600 focus:bg-white transition-all font-medium"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-xs font-bold text-evergreen-900 uppercase tracking-wider">
+                Last Name
+              </label>
+              <div className="relative">
+                <User className="w-4 h-4 text-evergreen-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  value={lastName}
+                  onChange={(e) => setLastName(e.target.value)}
+                  placeholder="Last name"
+                  className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-evergreen-200 text-sm bg-chalk focus:outline-none focus:ring-2 focus:ring-emerald-600 focus:bg-white transition-all font-medium"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-xs font-bold text-evergreen-900 uppercase tracking-wider">
+                Phone Number
+              </label>
+              <div className="relative">
+                <Phone className="w-4 h-4 text-evergreen-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                <input
+                  type="tel"
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value)}
+                  placeholder="+1 (555) 000-0000"
                   className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-evergreen-200 text-sm bg-chalk focus:outline-none focus:ring-2 focus:ring-emerald-600 focus:bg-white transition-all font-medium"
                 />
               </div>
@@ -85,6 +132,7 @@ export const ProfileSettingsPage: React.FC = () => {
                 <input
                   type="email"
                   disabled
+                  readOnly
                   value={user?.email || ""}
                   className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-evergreen-200 text-sm bg-evergreen-50/50 text-evergreen-600 font-medium cursor-not-allowed"
                 />
