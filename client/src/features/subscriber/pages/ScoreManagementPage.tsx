@@ -6,7 +6,8 @@ import { apiFetch, ApiError } from "../../../lib/api";
 
 interface Score {
   id: string;
-  stablefordScore: number;
+  score: number;
+  stablefordScore?: number;
   playedAt: string;
   courseName?: string;
 }
@@ -38,7 +39,7 @@ export const ScoreManagementPage: React.FC = () => {
   });
 
   const submitScoreMutation = useMutation({
-    mutationFn: async (payload: { stablefordScore: number; playedAt: string; courseName?: string }) => {
+    mutationFn: async (payload: { score: number; playedAt: string; courseName?: string }) => {
       setSubRequiredError(false);
       return apiFetch("/api/v1/scores", {
         method: "POST",
@@ -55,7 +56,8 @@ export const ScoreManagementPage: React.FC = () => {
       if (err instanceof ApiError && err.status === 403) {
         setSubRequiredError(true);
       } else {
-        setErrorMsg(err instanceof Error ? err.message : "Failed to record score. Please enter a valid 1–45 Stableford score.");
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        setErrorMsg((err as any)?.message || "Failed to record score. Please enter a valid 1–45 Stableford score.");
       }
     },
   });
@@ -72,9 +74,9 @@ export const ScoreManagementPage: React.FC = () => {
     }
 
     submitScoreMutation.mutate({
-      stablefordScore: scoreNum,
+      score: scoreNum,
       playedAt,
-      courseName: courseName.trim() || undefined,
+      ...(courseName.trim() ? { courseName: courseName.trim() } : {}),
     });
   };
 
@@ -127,7 +129,7 @@ export const ScoreManagementPage: React.FC = () => {
                 key={s.id || i}
                 className="w-12 h-12 rounded-2xl bg-evergreen-900 border-2 border-evergreen-700 text-amber-400 font-extrabold font-mono text-base flex items-center justify-center shadow-md"
               >
-                {s.stablefordScore}
+                {s.score ?? s.stablefordScore}
               </div>
             ))}
           </div>
@@ -262,7 +264,7 @@ export const ScoreManagementPage: React.FC = () => {
                           {score.courseName || "Standard 18-Hole Round"}
                         </td>
                         <td className="py-3 px-3 text-right font-mono font-bold text-evergreen-950 text-sm">
-                          {score.stablefordScore} pts
+                          {score.score ?? score.stablefordScore} pts
                         </td>
                       </tr>
                     ))}

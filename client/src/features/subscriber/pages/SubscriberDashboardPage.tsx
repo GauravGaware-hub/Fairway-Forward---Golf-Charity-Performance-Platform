@@ -17,7 +17,8 @@ import { apiFetch } from "../../../lib/api";
 
 interface Score {
   id: string;
-  stablefordScore: number;
+  score?: number;
+  stablefordScore?: number;
   playedAt: string;
   courseName?: string;
 }
@@ -145,7 +146,7 @@ export const SubscriberDashboardPage: React.FC = () => {
                     key={score.id || idx}
                     className="w-12 h-12 rounded-2xl bg-evergreen-900 border-2 border-evergreen-700 text-amber-400 font-extrabold font-mono text-base flex items-center justify-center shadow-md"
                   >
-                    {score.stablefordScore}
+                    {score.score ?? score.stablefordScore}
                   </div>
                 ))}
               </div>
@@ -196,7 +197,7 @@ export const SubscriberDashboardPage: React.FC = () => {
                       </div>
                     </div>
                     <div className="font-mono font-black text-sm text-evergreen-900 bg-white px-3 py-1 rounded-lg border border-evergreen-200">
-                      {score.stablefordScore} pts
+                      {score.score ?? score.stablefordScore} pts
                     </div>
                   </div>
                 ))}
