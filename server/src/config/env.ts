@@ -17,6 +17,7 @@ const envSchema = z.object({
   RAZORPAY_MONTHLY_PLAN_ID: z.string().optional().default("plan_monthly_placeholder"),
   RAZORPAY_YEARLY_PLAN_ID: z.string().optional().default("plan_yearly_placeholder"),
   PRIZE_POOL_PERCENTAGE: z.string().optional(),
+  DEMO_MODE: z.string().optional().transform((val) => val === "true" || val === "1"),
 });
 
 const _env = envSchema.safeParse(process.env);

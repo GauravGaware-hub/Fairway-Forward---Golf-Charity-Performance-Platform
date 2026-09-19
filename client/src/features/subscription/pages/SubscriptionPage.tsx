@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  activateDemoSubscription,
   cancelSubscription,
   createCheckoutSession,
   fetchSubscription,
@@ -59,6 +60,13 @@ export function SubscriptionPage() {
     },
   });
 
+  const demoMutation = useMutation({
+    mutationFn: () => activateDemoSubscription(),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["subscription"] });
+    },
+  });
+
   const cancelMutation = useMutation({
     mutationFn: () => cancelSubscription(),
     onSuccess: () => {
@@ -91,7 +99,7 @@ export function SubscriptionPage() {
 
   return (
     <div className="min-h-screen bg-background text-foreground py-12 px-4">
-      <div className="max-w-4xl mx-auto space-y-8">
+      <div className="max-w-5xl mx-auto space-y-8">
         <div className="flex justify-between items-center">
           <div>
             <h1 className="text-3xl font-bold tracking-tight">Subscription Management</h1>
@@ -112,13 +120,16 @@ export function SubscriptionPage() {
         {(!hasActiveSub || subscription?.cancelAtPeriodEnd) && (
           <SubscriptionPlans
             onSelectPlan={(plan) => checkoutMutation.mutate(plan)}
+            onActivateDemo={() => demoMutation.mutate()}
+            demoMode={subscription?.demoMode}
             isLoading={checkoutMutation.isPending}
+            isActivatingDemo={demoMutation.isPending}
           />
         )}
 
-        {checkoutMutation.isError && (
+        {(checkoutMutation.isError || demoMutation.isError) && (
           <div className="p-4 rounded-lg bg-rose-500/10 border border-rose-500/20 text-rose-400 text-sm max-w-xl mx-auto text-center">
-            {(checkoutMutation.error as Error).message}
+            {((checkoutMutation.error || demoMutation.error) as Error).message}
           </div>
         )}
       </div>

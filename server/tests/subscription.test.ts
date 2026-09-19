@@ -2,6 +2,7 @@ import { Plan, Role, SubscriptionStatus } from "@prisma/client";
 import request from "supertest";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { app } from "../src/app.js";
+import { env } from "../src/config/env.js";
 import { prisma } from "../src/config/prisma.js";
 import { razorpay } from "../src/config/razorpay.js";
 import { supabaseServer } from "../src/config/supabase.js";
@@ -273,6 +274,120 @@ describe("Subscription API — Razorpay Test Mode Integration", () => {
 
       expect(res.status).toBe(404);
       expect(res.body.error.code).toBe("SUBSCRIPTION_NOT_FOUND");
+    });
+  });
+
+  describe("7. Free Demo Subscription Mode Integration", () => {
+    it("returns 401 when activating demo subscription unauthenticated", async () => {
+      const res = await request(app).post("/api/v1/subscription/demo");
+      expect(res.status).toBe(401);
+      expect(res.body.error.code).toBe("UNAUTHORIZED");
+    });
+
+    it("returns 403 DEMO_MODE_DISABLED when DEMO_MODE is false", async () => {
+      (env as any).DEMO_MODE = false;
+      setupAuthUser();
+
+      const res = await request(app)
+        .post("/api/v1/subscription/demo")
+        .set("Authorization", "Bearer valid-token");
+
+      expect(res.status).toBe(403);
+      expect(res.body.error.code).toBe("DEMO_MODE_DISABLED");
+    });
+
+    it("creates active demo subscription when DEMO_MODE is true", async () => {
+      (env as any).DEMO_MODE = true;
+      setupAuthUser();
+      vi.mocked(prisma.subscription.findUnique).mockResolvedValueOnce(null);
+      const mockDemoSub = {
+        ...mockSubscription,
+        providerSubscriptionId: `demo_sub_${mockUser.id}`,
+        status: SubscriptionStatus.ACTIVE,
+      };
+      vi.mocked(prisma.subscription.upsert).mockResolvedValueOnce(mockDemoSub);
+
+      const res = await request(app)
+        .post("/api/v1/subscription/demo")
+        .set("Authorization", "Bearer valid-token");
+
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.data.isDemo).toBe(true);
+      expect(res.body.data.status).toBe("ACTIVE");
+      expect(prisma.subscription.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { userId: mockUser.id },
+          create: expect.objectContaining({
+            userId: mockUser.id,
+            providerSubscriptionId: `demo_sub_${mockUser.id}`,
+            status: SubscriptionStatus.ACTIVE,
+          }),
+        })
+      );
+    });
+
+    it("is idempotent: repeated activation returns existing subscription without creating duplicates", async () => {
+      (env as any).DEMO_MODE = true;
+      setupAuthUser();
+      const mockDemoSub = {
+        ...mockSubscription,
+        providerSubscriptionId: `demo_sub_${mockUser.id}`,
+        status: SubscriptionStatus.ACTIVE,
+      };
+      vi.mocked(prisma.subscription.findUnique).mockResolvedValueOnce(mockDemoSub);
+
+      const res = await request(app)
+        .post("/api/v1/subscription/demo")
+        .set("Authorization", "Bearer valid-token");
+
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.data.isDemo).toBe(true);
+      expect(prisma.subscription.upsert).not.toHaveBeenCalled();
+    });
+
+    it("demo subscription passes requireActiveSubscription middleware for protected score API", async () => {
+      (env as any).DEMO_MODE = true;
+      setupAuthUser();
+      const mockDemoSub = {
+        ...mockSubscription,
+        providerSubscriptionId: `demo_sub_${mockUser.id}`,
+        status: SubscriptionStatus.ACTIVE,
+      };
+      vi.mocked(prisma.subscription.findUnique).mockResolvedValueOnce(mockDemoSub);
+      vi.mocked(prisma.score.findMany).mockResolvedValueOnce([]);
+
+      const res = await request(app)
+        .get("/api/v1/scores")
+        .set("Authorization", "Bearer valid-token");
+
+      expect(res.status).toBe(200);
+    });
+
+    it("strictly binds subscription to authenticated user context (prevents user A from activating for user B)", async () => {
+      (env as any).DEMO_MODE = true;
+      const userA = { ...mockUser, id: "user-a-id", email: "userA@example.com" };
+      setupAuthUser(userA);
+      vi.mocked(prisma.subscription.findUnique).mockResolvedValueOnce(null);
+      vi.mocked(prisma.subscription.upsert).mockResolvedValueOnce({
+        ...mockSubscription,
+        userId: userA.id,
+        providerSubscriptionId: `demo_sub_${userA.id}`,
+        status: SubscriptionStatus.ACTIVE,
+      });
+
+      const res = await request(app)
+        .post("/api/v1/subscription/demo")
+        .set("Authorization", "Bearer valid-token")
+        .send({ userId: "attacker-user-b-id" });
+
+      expect(res.status).toBe(200);
+      expect(prisma.subscription.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { userId: userA.id },
+        })
+      );
     });
   });
 });

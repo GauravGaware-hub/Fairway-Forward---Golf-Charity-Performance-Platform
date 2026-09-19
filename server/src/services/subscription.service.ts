@@ -53,6 +53,8 @@ export class SubscriptionService {
         currentPeriodStart: null,
         currentPeriodEnd: null,
         cancelAtPeriodEnd: false,
+        isDemo: false,
+        demoMode: env.DEMO_MODE,
       };
     }
 
@@ -63,6 +65,74 @@ export class SubscriptionService {
       currentPeriodStart: subscription.currentPeriodStart,
       currentPeriodEnd: subscription.currentPeriodEnd,
       cancelAtPeriodEnd: subscription.cancelAtPeriodEnd,
+      isDemo: subscription.providerSubscriptionId?.startsWith("demo_") ?? false,
+      demoMode: env.DEMO_MODE,
+    };
+  }
+
+  /**
+   * Activates a Free Demo subscription for the authenticated user when DEMO_MODE is enabled.
+   */
+  static async activateDemoSubscription(userId: string) {
+    if (!env.DEMO_MODE) {
+      throw new Error("DEMO_MODE_DISABLED");
+    }
+
+    const existingSubscription = await prisma.subscription.findUnique({
+      where: { userId },
+    });
+
+    if (
+      existingSubscription &&
+      (existingSubscription.status === SubscriptionStatus.ACTIVE ||
+        existingSubscription.status === SubscriptionStatus.TRIALING) &&
+      !existingSubscription.cancelAtPeriodEnd
+    ) {
+      return {
+        id: existingSubscription.id,
+        plan: existingSubscription.plan,
+        status: existingSubscription.status,
+        currentPeriodStart: existingSubscription.currentPeriodStart,
+        currentPeriodEnd: existingSubscription.currentPeriodEnd,
+        cancelAtPeriodEnd: existingSubscription.cancelAtPeriodEnd,
+        isDemo: existingSubscription.providerSubscriptionId?.startsWith("demo_") ?? false,
+        demoMode: env.DEMO_MODE,
+      };
+    }
+
+    const providerSubscriptionId = `demo_sub_${userId}`;
+    const oneYearLater = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000);
+
+    const subscription = await prisma.subscription.upsert({
+      where: { userId },
+      create: {
+        userId,
+        providerSubscriptionId,
+        plan: Plan.MONTHLY,
+        status: SubscriptionStatus.ACTIVE,
+        currentPeriodStart: new Date(),
+        currentPeriodEnd: oneYearLater,
+        cancelAtPeriodEnd: false,
+      },
+      update: {
+        providerSubscriptionId,
+        plan: Plan.MONTHLY,
+        status: SubscriptionStatus.ACTIVE,
+        currentPeriodStart: new Date(),
+        currentPeriodEnd: oneYearLater,
+        cancelAtPeriodEnd: false,
+      },
+    });
+
+    return {
+      id: subscription.id,
+      plan: subscription.plan,
+      status: subscription.status,
+      currentPeriodStart: subscription.currentPeriodStart,
+      currentPeriodEnd: subscription.currentPeriodEnd,
+      cancelAtPeriodEnd: subscription.cancelAtPeriodEnd,
+      isDemo: true,
+      demoMode: env.DEMO_MODE,
     };
   }
 

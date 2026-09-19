@@ -126,3 +126,25 @@ export async function cancelSubscription(req: Request, res: Response): Promise<v
     });
   }
 }
+
+export async function activateDemoSubscription(req: Request, res: Response): Promise<void> {
+  const user = req.user!;
+
+  try {
+    const subscription = await SubscriptionService.activateDemoSubscription(user.id);
+    res.status(200).json({
+      success: true,
+      data: subscription,
+    });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "Failed to activate demo subscription";
+    const isDemoDisabled = message.includes("DEMO_MODE_DISABLED");
+    res.status(isDemoDisabled ? 403 : 500).json({
+      success: false,
+      error: {
+        code: isDemoDisabled ? "DEMO_MODE_DISABLED" : "DEMO_ACTIVATION_ERROR",
+        message: isDemoDisabled ? "Demo mode is not enabled" : message,
+      },
+    });
+  }
+}

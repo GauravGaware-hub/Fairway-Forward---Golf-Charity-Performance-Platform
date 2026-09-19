@@ -7,6 +7,8 @@ export interface UserSubscription {
   currentPeriodStart: string | null;
   currentPeriodEnd: string | null;
   cancelAtPeriodEnd: boolean;
+  isDemo?: boolean;
+  demoMode?: boolean;
 }
 
 export interface CheckoutResponse {
@@ -48,4 +50,11 @@ export async function cancelSubscription(): Promise<void> {
   await apiFetch("/api/v1/subscription/cancel", {
     method: "POST",
   });
+}
+
+export async function activateDemoSubscription(): Promise<UserSubscription> {
+  const res = await apiFetch<{ success: boolean; data: UserSubscription }>("/api/v1/subscription/demo", {
+    method: "POST",
+  });
+  return res.data || (res as unknown as UserSubscription);
 }

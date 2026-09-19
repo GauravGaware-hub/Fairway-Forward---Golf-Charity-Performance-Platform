@@ -1,5 +1,6 @@
 import { Router } from "express";
 import {
+  activateDemoSubscription,
   cancelSubscription,
   createCheckoutSession,
   getSubscription,
@@ -13,5 +14,6 @@ router.get("/subscription", requireAuth, getSubscription);
 router.post("/subscription/checkout", requireAuth, createCheckoutSession);
 router.post("/subscription/verify", requireAuth, verifyPayment);
 router.post("/subscription/cancel", requireAuth, cancelSubscription);
+router.post("/subscription/demo", requireAuth, activateDemoSubscription);
 
 export default router;

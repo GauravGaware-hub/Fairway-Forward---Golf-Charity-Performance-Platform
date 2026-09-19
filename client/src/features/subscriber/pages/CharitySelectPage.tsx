@@ -1,17 +1,40 @@
 import React, { useState } from "react";
 import { Link } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Heart, CheckCircle2, Search, AlertCircle, ArrowRight } from "lucide-react";
+import { Heart, CheckCircle2, Search, AlertCircle, ArrowRight, Building2 } from "lucide-react";
 import { useAuth } from "../../../hooks/useAuth";
 import { apiFetch, ApiError } from "../../../lib/api";
 
 interface Charity {
   id: string;
   name: string;
-  category: string;
+  category?: string;
   description: string;
   websiteUrl: string | null;
+  imageUrl?: string | null;
+  isFeatured?: boolean;
 }
+
+const CharityLogo: React.FC<{ imageUrl?: string | null; name: string }> = ({ imageUrl, name }) => {
+  const [hasError, setHasError] = useState(false);
+
+  if (!imageUrl || hasError) {
+    return (
+      <div className="w-10 h-10 rounded-lg bg-emerald-50 border border-emerald-200 flex items-center justify-center text-emerald-700 shrink-0">
+        <Building2 className="w-5 h-5 text-emerald-600" />
+      </div>
+    );
+  }
+
+  return (
+    <img
+      src={imageUrl}
+      alt={name}
+      onError={() => setHasError(true)}
+      className="w-10 h-10 rounded-lg object-cover border border-evergreen-200 bg-chalk shrink-0"
+    />
+  );
+};
 
 export const CharitySelectPage: React.FC = () => {
   const { user, refreshUser } = useAuth();
@@ -61,8 +84,9 @@ export const CharitySelectPage: React.FC = () => {
   const activeCharityId = user?.selectedCharityId || user?.selectedCharity?.id;
 
   const filteredCharities = charities.filter((c) => {
+    const categoryText = c.category || (c.isFeatured ? "FEATURED" : "VERIFIED");
     const matchesCategory =
-      selectedCategory === "ALL" || c.category.toUpperCase().includes(selectedCategory);
+      selectedCategory === "ALL" || categoryText.toUpperCase().includes(selectedCategory);
     const matchesSearch =
       c.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       c.description.toLowerCase().includes(searchQuery.toLowerCase());
@@ -149,6 +173,12 @@ export const CharitySelectPage: React.FC = () => {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {filteredCharities.map((charity) => {
             const isSelected = activeCharityId === charity.id;
+            const displayCategory =
+              charity.category ||
+              (charity.isFeatured ? "Featured Partner" : "Verified Charity");
+            const isThisCharityPending =
+              selectCharityMutation.isPending &&
+              selectCharityMutation.variables === charity.id;
 
             return (
               <div
@@ -160,12 +190,15 @@ export const CharitySelectPage: React.FC = () => {
                 }`}
               >
                 <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-evergreen-50 text-evergreen-800 border border-evergreen-200">
-                      {charity.category}
-                    </span>
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-2.5 overflow-hidden">
+                      <CharityLogo imageUrl={charity.imageUrl} name={charity.name} />
+                      <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-evergreen-50 text-evergreen-800 border border-evergreen-200 truncate">
+                        {displayCategory}
+                      </span>
+                    </div>
                     {isSelected && (
-                      <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full">
+                      <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full shrink-0">
                         <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> SELECTED
                       </span>
                     )}
@@ -191,7 +224,7 @@ export const CharitySelectPage: React.FC = () => {
                       <>
                         <CheckCircle2 className="w-4 h-4" /> Active Charity Partner
                       </>
-                    ) : selectCharityMutation.isPending ? (
+                    ) : isThisCharityPending ? (
                       <span className="w-4 h-4 rounded-full border-2 border-white border-t-transparent animate-spin" />
                     ) : (
                       <span>Select This Charity</span>
